@@ -1,0 +1,42 @@
+{
+  "project": "ProcrastiSense",
+  "stage": "Stage 3",
+  "n_students": 28785,
+  "n_assessment_rows": 393314,
+  "if_contamination": 0.3,
+  "anomaly_rate": 0.3,
+  "alert_rate": 0.379,
+  "auc_roc_vs_atrisk": 0.8789,
+  "proc_type_dist": {
+    "distraction_escape": 191577,
+    "perfectionism_paralysis": 124982,
+    "deadline_panic": 76755
+  },
+  "shap_flagged_rows": 500,
+  "feature_cols": [
+    "delay_days_pos",
+    "delay_ratio",
+    "delay_deviation_pos",
+    "rolling_avg_delay",
+    "delay_zscore_pos",
+    "non_submit",
+    "is_last_minute",
+    "click_baseline",
+    "click_drop_ratio_pos",
+    "is_dropout_week",
+    "click_trend_pos",
+    "consec_low",
+    "screen_ratio",
+    "distraction_freq",
+    "focus_trend_pos",
+    "avoidance_score_pos",
+    "day_of_week",
+    "days_to_next_deadline",
+    "exam_season"
+  ],
+  "models_saved": [
+    "/kaggle/working/stage3_models/isolation_forest.pkl",
+    "/kaggle/working/stage3_models/random_forest_type.pkl",
+    "/kaggle/working/stage3_models/scaler.pkl"
+  ]
+}

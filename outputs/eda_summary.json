@@ -1,0 +1,79 @@
+{
+  "project": "ProcrastiSense",
+  "step": "Step1_Step2",
+  "oulad": {
+    "students": 28785,
+    "assessment_rows": 393314,
+    "vle_weekly_rows": 627031,
+    "at_risk_rate": 0.528,
+    "outcome_dist": {
+      "Pass": 12361,
+      "Withdrawn": 10156,
+      "Fail": 7052,
+      "Distinction": 3024
+    },
+    "avg_delay_days": 11.32,
+    "nonsub_rate": 0.446,
+    "anomaly_rate": 0.479
+  },
+  "features": {
+    "group_a_delay": [
+      "deadline_day",
+      "assessment_type",
+      "weight",
+      "is_high_weight",
+      "submitted",
+      "non_submit",
+      "is_last_minute",
+      "delay_days",
+      "delay_ratio",
+      "delay_deviation",
+      "delay_trend",
+      "rolling_avg_delay",
+      "rolling_avg_delay_ratio",
+      "rolling_last_min_rate",
+      "rolling_nonsub_rate",
+      "score",
+      "is_fail",
+      "delay_days_raw",
+      "day_of_week",
+      "days_to_next_deadline",
+      "exam_season",
+      "week",
+      "screen_ratio",
+      "distraction_freq",
+      "focus_trend",
+      "avoidance_score",
+      "click_baseline",
+      "click_drop_ratio",
+      "is_dropout_week",
+      "click_trend",
+      "consec_low"
+    ],
+    "group_b_vle": [
+      "week",
+      "weekly_clicks",
+      "click_baseline",
+      "click_drop_ratio",
+      "is_dropout_week",
+      "click_trend",
+      "consec_low"
+    ],
+    "fixes_applied": [
+      "delay_days clipped to +/-30",
+      "temporal features: day_of_week, days_to_next_deadline, exam_season",
+      "VLE weekly features merged: click_baseline, click_drop_ratio, consec_low",
+      "avoidance_score (simulated): screen_ratio, distraction_freq, focus_trend"
+    ]
+  },
+  "checkpoints": [
+    "baseline_assess.parquet",
+    "baseline_vle.parquet",
+    "feat_group_a.parquet",
+    "feat_group_b.parquet",
+    "feature_matrix_oulad.parquet",
+    "oulad_full_assess.parquet",
+    "oulad_sa_clean.parquet",
+    "oulad_vle_weekly.parquet"
+  ]
+}

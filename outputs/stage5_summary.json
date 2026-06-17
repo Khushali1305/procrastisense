@@ -1,0 +1,19 @@
+{
+  "project": "ProcrastiSense",
+  "stage": "Stage 5",
+  "n_nudges_generated": 500,
+  "model_used": "Groq / llama-3.3-70b-versatile",
+  "cost": "Free tier \u2014 $0",
+  "mood_source": "MOCK_DATA \u2014 no real check-in feature yet",
+  "proc_type_dist": {
+    "perfectionism_paralysis": 338,
+    "deadline_panic": 126,
+    "distraction_escape": 36
+  },
+  "sample_nudge": {
+    "rf_type": "perfectionism_paralysis",
+    "mood_mock": "overwhelmed",
+    "nudge": "I can tell you're feeling overwhelmed, and it's understandable given the exam season pressure. It's like the weight of wanting everything to be perfect is slowing you down.",
+    "micro_action": "Take 5 minutes to write down the minimum requirements for your current task, focusing on what's truly necessary to move forward."
+  }
+}
