@@ -1,0 +1,24 @@
+# Data — OULAD CSVs are large and publicly downloadable, don't commit them
+data/
+*.csv
+
+# Large generated artifacts
+outputs/*.parquet
+*.parquet
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+.env
+venv/
+.venv/
+
+# Model artifacts (can be large; keep small ones, ignore large ones if needed)
+# models/*.pkl   # uncomment if model files exceed GitHub's size comfort
+
+# OS
+.DS_Store
+Thumbs.db
