@@ -70,19 +70,31 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts TEXT DEFAULT (datetime('now')),
             mood TEXT, energy INTEGER, sleep_hours REAL, tasks_on_time TEXT,
-            task_name TEXT, proc_type TEXT,
+            task_name TEXT, blockers TEXT, recent_activity TEXT,
+            deadline_proximity TEXT, clarity_score INTEGER,
+            proc_type TEXT, type_confidence REAL,
             nudge TEXT, micro_action TEXT
         )
     """)
+    # Backward-compatible upgrade for existing DBs from the old schema
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(checkins)")}
+    for col, coltype in [("blockers", "TEXT"), ("recent_activity", "TEXT"),
+                          ("deadline_proximity", "TEXT"), ("clarity_score", "INTEGER"),
+                          ("type_confidence", "REAL")]:
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE checkins ADD COLUMN {col} {coltype}")
     conn.commit()
     conn.close()
 
-def save_checkin(mood, energy, sleep, tasks_on_time, task, proc_type, nudge, action):
+def save_checkin(mood, energy, sleep, tasks_on_time, task, blockers, recent_activity,
+                  deadline_proximity, clarity_score, proc_type, type_confidence, nudge, action):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        "INSERT INTO checkins (mood,energy,sleep_hours,tasks_on_time,task_name,proc_type,nudge,micro_action) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (mood, energy, sleep, tasks_on_time, task, proc_type, nudge, action)
+        "INSERT INTO checkins (mood,energy,sleep_hours,tasks_on_time,task_name,blockers,"
+        "recent_activity,deadline_proximity,clarity_score,proc_type,type_confidence,nudge,micro_action) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (mood, energy, sleep, tasks_on_time, task, blockers, recent_activity,
+         deadline_proximity, clarity_score, proc_type, type_confidence, nudge, action)
     )
     conn.commit()
     conn.close()
@@ -111,6 +123,74 @@ TYPE_GUIDANCE = {
         "This student overthinks starting. Fears doing it wrong. "
         "Give permission to start badly. Done > perfect. Lower the stakes."
 }
+
+# ── Diagnostic check-in: real blockers instead of a self-labeled dropdown ─────
+BLOCKER_OPTIONS = {
+    "no_clue_where_to_start": "I genuinely don't know where to start",
+    "keep_getting_distracted": "I keep opening other tabs / my phone / social media",
+    "worried_not_good_enough": "I'm worried whatever I make won't be good enough",
+    "deadline_not_real_yet": "The deadline doesn't feel real / urgent yet",
+    "overwhelmed_by_size": "The task feels too big to even approach",
+    "low_energy": "I just don't have the energy right now",
+}
+RECENT_ACTIVITY_OPTIONS = [
+    "Scrolling social media / browsing",
+    "Doing other (easier) tasks instead",
+    "Sitting with the task open, not writing anything",
+    "Researching / re-reading instructions repeatedly",
+    "Sleeping or resting",
+    "Haven't opened it at all today",
+]
+DEADLINE_OPTIONS = ["Today", "In 1-2 days", "This week", "More than a week away", "No fixed deadline"]
+
+def infer_type_from_diagnostic(blockers, recent_activity, deadline_proximity, clarity_score, energy):
+    """
+    Transparent, rule-based scoring over the diagnostic answers above —
+    NOT the OULAD-trained Random Forest (that model needs click-stream/
+    submission-timing features a check-in form can't produce; see
+    docs/MODEL_CARD.md). This is disclosed in the UI as a behavioral
+    diagnostic, not presented as the same validated model used on the
+    Demo Profiles page.
+
+    Returns (proc_type, confidence 0-1, score_breakdown dict).
+    """
+    scores = {"deadline_panic": 0.0, "distraction_escape": 0.0, "perfectionism_paralysis": 0.0}
+
+    if "deadline_not_real_yet" in blockers:
+        scores["deadline_panic"] += 1.0
+    if deadline_proximity in ("Today", "In 1-2 days"):
+        scores["deadline_panic"] += 1.0
+    if "overwhelmed_by_size" in blockers:
+        scores["deadline_panic"] += 0.5
+
+    if "keep_getting_distracted" in blockers:
+        scores["distraction_escape"] += 1.5
+    if recent_activity == "Scrolling social media / browsing":
+        scores["distraction_escape"] += 1.0
+    if recent_activity == "Doing other (easier) tasks instead":
+        scores["distraction_escape"] += 0.5
+
+    if "worried_not_good_enough" in blockers:
+        scores["perfectionism_paralysis"] += 1.5
+    if "no_clue_where_to_start" in blockers:
+        scores["perfectionism_paralysis"] += 0.5
+    if recent_activity == "Researching / re-reading instructions repeatedly":
+        scores["perfectionism_paralysis"] += 1.0
+    if clarity_score <= 2:
+        scores["perfectionism_paralysis"] += 1.0
+
+    total = sum(scores.values())
+    if total == 0:
+        # No clear signal from the diagnostic — fall back to the single
+        # strongest raw input (deadline proximity) rather than a coin flip,
+        # and mark confidence as low so the UI can say so honestly.
+        proc_type = "deadline_panic" if deadline_proximity in ("Today", "In 1-2 days") else "perfectionism_paralysis"
+        return proc_type, 0.34, scores
+
+    proc_type = max(scores, key=scores.get)
+    confidence = scores[proc_type] / total
+    return proc_type, round(confidence, 2), scores
+
 
 def generate_nudge_live(proc_type, mood, task_name, cohort_narrative=""):
     clients = get_groq_clients()
@@ -244,63 +324,105 @@ if page == "🎭 Demo profiles":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "📋 Daily check-in":
     st.title("📋 Daily Check-in")
-    st.caption("60 seconds. Tell us how you are feeling and what you are avoiding.")
+    st.caption("A couple minutes, not 60 seconds — but the extra questions are what let us figure out "
+               "your actual blocker instead of guessing.")
     st.markdown("---")
     st.warning(
-        "**Honest framing:** the procrastination-detection models on the Demo Profiles page were "
-        "trained on OULAD submission history that a brand-new check-in doesn't have. This page asks "
-        "you to self-report your pattern, and grounds your nudge with two *real, verified* cohort "
-        "statistics — it does not pretend to run the trained model on you.",
+        "**Honest framing:** the trained models on the Demo Profiles page need OULAD-style "
+        "submission/click data that a check-in form can't produce. This page no longer asks you to "
+        "self-label your pattern — instead it infers it from your actual answers below using a "
+        "transparent rule-based diagnostic (shown to you, not hidden), and grounds your nudge with "
+        "real cohort statistics. See docs/MODEL_CARD.md for exactly how this differs from the "
+        "validated model.",
         icon="ℹ️"
     )
 
     with st.form("checkin_form"):
+        st.subheader("How are you doing?")
         col1, col2 = st.columns(2)
         with col1:
             mood = st.selectbox("How are you feeling right now?",
                 ["stressed", "overwhelmed", "tired", "distracted", "anxious", "okay", "motivated"])
             energy = st.slider("Energy level (1=drained, 10=energised)", 1, 10, 5)
-            sleep = st.slider("Hours of sleep last night", 3.0, 10.0, 7.0, 0.5)
-            tasks_on_time = st.selectbox(
-                "How often do you complete tasks on time?",
-                ["Always", "Often", "Sometimes", "Rarely"], index=2
-            )
         with col2:
-            task_name = st.text_input("What task are you avoiding?",
-                placeholder="e.g. Data Structures assignment, ML project report...")
-            proc_type = st.selectbox(
-                "Which pattern sounds most like you right now? (self-reported)",
-                ["deadline_panic", "distraction_escape", "perfectionism_paralysis"],
-                format_func=lambda x: {
-                    "deadline_panic": "⏰ Deadline-panic — I know the deadline, I just haven't started",
-                    "distraction_escape": "📱 Distraction-escape — I keep opening other tabs/apps",
-                    "perfectionism_paralysis": "🔄 Perfectionism-paralysis — I don't know how to start perfectly"
-                }[x]
-            )
+            sleep = st.slider("Hours of sleep last night", 3.0, 10.0, 7.0, 0.5)
+            tasks_on_time = st.selectbox("How often do you complete tasks on time?",
+                ["Always", "Often", "Sometimes", "Rarely"], index=2)
+
+        st.markdown("---")
+        st.subheader("What's actually going on with this task?")
+        task_name = st.text_input("What task are you avoiding?",
+            placeholder="e.g. Data Structures assignment, ML project report...")
+
+        blockers = st.multiselect(
+            "What's actually stopping you right now? (pick all that apply — this matters more "
+            "than the mood above for figuring out the right nudge)",
+            options=list(BLOCKER_OPTIONS.keys()),
+            format_func=lambda k: BLOCKER_OPTIONS[k],
+        )
+        recent_activity = st.selectbox(
+            "What have you actually been doing for the last hour, honestly?",
+            options=RECENT_ACTIVITY_OPTIONS,
+        )
+        col3, col4 = st.columns(2)
+        with col3:
+            deadline_proximity = st.selectbox("When is it actually due?", options=DEADLINE_OPTIONS, index=2)
+        with col4:
+            clarity_score = st.slider(
+                "How clear are you on what 'done' looks like for this task? (1=no idea, 5=totally clear)",
+                1, 5, 3)
+
         submitted = st.form_submit_button("Generate my nudge →", type="primary", use_container_width=True)
 
     if submitted:
         if not task_name.strip():
             st.warning("Please enter the task you are avoiding.")
+        elif not blockers:
+            st.warning("Pick at least one thing that's actually stopping you — that's what drives the nudge.")
         else:
+            proc_type, type_confidence, score_breakdown = infer_type_from_diagnostic(
+                blockers, recent_activity, deadline_proximity, clarity_score, energy)
+
             with st.spinner("Looking up real cohort statistics..."):
                 cohort_result = cohort.build_narrative(sleep_hours=sleep, tasks_on_time_response=tasks_on_time)
+
+            blocker_text = "; ".join(BLOCKER_OPTIONS[b] for b in blockers)
+            rich_context = (
+                f"Specific blockers reported: {blocker_text}. "
+                f"Recent activity: {recent_activity}. "
+                f"Deadline: {deadline_proximity}. "
+                f"Clarity on 'done' (1-5): {clarity_score}. "
+                f"{cohort_result['narrative']}"
+            )
             with st.spinner("Generating your personalised nudge..."):
-                result = generate_nudge_live(proc_type, mood, task_name, cohort_result["narrative"])
+                result = generate_nudge_live(proc_type, mood, task_name, rich_context)
 
             nudge = result.get("nudge", "")
             action = result.get("micro_action", "")
 
             st.markdown("---")
+            st.subheader("🔍 What we're seeing")
+            conf_label = "high" if type_confidence >= 0.6 else ("moderate" if type_confidence >= 0.4 else "low")
+            st.info(
+                f"Based on your answers, this looks most like **{proc_type.replace('_',' ').title()}** "
+                f"({conf_label} confidence — {type_confidence:.0%}). This is inferred from the blockers "
+                f"and behavior you reported, not a self-label."
+            )
+            with st.expander("See the diagnostic scoring breakdown"):
+                st.write(score_breakdown)
+                st.caption("Rule-based, transparent scoring over your diagnostic answers — "
+                           "not the OULAD-trained model used on the Demo Profiles page.")
+
             st.subheader("💬 Your nudge")
             st.success(f"**{nudge}**")
             st.info(f"📌 **Micro-action:** {action}")
 
             with st.expander("📊 Real cohort statistics behind this nudge"):
                 st.write(cohort_result["narrative"])
-                st.caption(cohort_result["disclosure"])
+                st.caption(cohort_result.get("disclosure", ""))
 
-            save_checkin(mood, energy, sleep, tasks_on_time, task_name, proc_type, nudge, action)
+            save_checkin(mood, energy, sleep, tasks_on_time, task_name, blocker_text, recent_activity,
+                         deadline_proximity, clarity_score, proc_type, type_confidence, nudge, action)
             st.caption("✓ Check-in saved to your history.")
 
     st.markdown("---")
@@ -309,7 +431,8 @@ elif page == "📋 Daily check-in":
         import pandas as pd
         conn = sqlite3.connect(DB_PATH)
         hist = pd.read_sql(
-            "SELECT ts, mood, tasks_on_time, task_name, proc_type, nudge FROM checkins ORDER BY ts DESC LIMIT 10",
+            "SELECT ts, mood, deadline_proximity, task_name, blockers, proc_type, type_confidence, nudge "
+            "FROM checkins ORDER BY ts DESC LIMIT 10",
             conn)
         conn.close()
         if len(hist):
