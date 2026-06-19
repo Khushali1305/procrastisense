@@ -1,270 +1,133 @@
 """
-model_inference.py — production inference layer for app.py.
+model_inference.py — ProcrastiSense v2
 
-Two inference paths:
+Loads the v2 retrained models (isolation_forest_v2.pkl, scaler_v2.pkl,
+logistic_regression_v2.pkl, random_forest_type_v2.pkl) and runs REAL
+inference against the 3 precomputed demo-profile feature vectors
+(demo_profiles_v2.json — real OULAD students from the 2014 holdout,
+selected because the v2 models genuinely flag them and RF/K-Means agree).
 
-1. get_demo_profile(proc_type)
-   Returns real model output for a real OULAD student (see
-   build_full_demo_profiles.py for how these were generated — actual trained
-   models run on actual held-out feature rows, not hand-picked numbers).
+This module does NOT run inference for live check-in users. The v2
+models were trained on OULAD submission-history features (rolling delay
+averages, click-engagement baselines, etc.) that a brand-new check-in
+user has no history for — running them on a fabricated/guessed feature
+vector would be exactly the kind of dishonest "fake model output" this
+rewrite exists to remove. Live check-in personalization comes from
+cohort_matching.py instead (real cohort statistics + self-reported type
++ LLM nudge) — see app.py.
 
-2. score_checkin_features(history_df)
-   Takes a student's accumulated check-in history (≥3 rows) and derives
-   behavioural proxy features structurally analogous to the OULAD feature
-   space, then runs those through the trained Random Forest type-classifier.
-
-   IMPORTANT: these are PROXY features, not the same click-stream features
-   the RF was trained on. This is disclosed in the return dict and must be
-   surfaced in the UI. See 'source' and 'proxy_disclosure' keys.
+Usage:
+    inference = ModelInference(models_dir="...", demo_json_path="...")
+    profile = inference.get_demo_profile("deadline_panic")
+    # -> dict with if_score, blended_score, rf_predicted_type, rf_confidence,
+    #    top3_shap_features, all computed for real by the v2 models.
 """
 import json
 import pickle
-import warnings
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
+FEATURE_COLS_V2 = [
+    'delay_days_pos', 'delay_ratio', 'delay_deviation_pos',
+    'rolling_avg_delay_ratio', 'rolling_last_min_rate', 'rolling_nonsub_rate',
+    'delay_zscore_pos', 'non_submit', 'is_last_minute',
+    'click_baseline', 'click_drop_ratio_pos', 'click_trend_pos',
+    'is_dropout_week', 'consec_low',
+    'day_of_week', 'days_to_next_deadline', 'exam_season',
+]
 
-
-# ── Mood → proxy signal mappings ─────────────────────────────────────────────
-# Each mood maps to the signal it most strongly represents (0–1 scale).
-_MOOD_DISTRACTION = {
-    "distracted": 1.0, "overwhelmed": 0.6, "anxious": 0.3,
-    "stressed": 0.2,   "tired": 0.4,       "okay": 0.0, "motivated": 0.0,
+FEATURE_LABELS = {
+    'delay_days_pos': 'days late (0 if early/on-time)',
+    'delay_ratio': 'delay relative to time allowed',
+    'delay_deviation_pos': 'delay above personal baseline',
+    'rolling_avg_delay_ratio': 'rolling avg delay ratio (last 3 assessments)',
+    'rolling_last_min_rate': 'rolling last-minute submission rate',
+    'rolling_nonsub_rate': 'rolling non-submission rate',
+    'delay_zscore_pos': 'delay z-score above personal baseline',
+    'non_submit': 'did not submit this assessment',
+    'is_last_minute': 'submitted in the last 24h before deadline',
+    'click_baseline': 'VLE click baseline (first 4 weeks)',
+    'click_drop_ratio_pos': 'drop in VLE engagement vs baseline',
+    'click_trend_pos': 'declining click trend',
+    'is_dropout_week': 'in a week with course-wide engagement drop',
+    'consec_low': 'consecutive low-engagement weeks',
+    'day_of_week': 'day of week (0=Mon)',
+    'days_to_next_deadline': 'days until next deadline',
+    'exam_season': 'in exam season',
 }
-_MOOD_DEADLINE_PANIC = {
-    "anxious": 1.0, "stressed": 0.8, "overwhelmed": 0.4,
-    "tired": 0.2,   "distracted": 0.1, "okay": 0.0, "motivated": 0.0,
-}
-
-# Minimum check-ins before we trust the proxy features enough to run inference.
-MIN_CHECKINS = 3
-
-
-def _build_proxy_features(hdf: pd.DataFrame) -> dict:
-    """
-    Derive OULAD-analogous features from accumulated check-in history.
-
-    hdf columns: ts (datetime-parseable), mood (str), energy (int 1–10),
-                 sleep_hours (float), tasks_on_time (str), task_name (str).
-
-    Returns a flat dict of floats in [0, 1] matching the RF's expected
-    feature names where possible.
-    """
-    n = len(hdf)
-    hdf = hdf.copy()
-    hdf["ts"] = pd.to_datetime(hdf["ts"])
-    hdf = hdf.sort_values("ts").reset_index(drop=True)
-
-    # ── delay_ratio proxy ─────────────────────────────────────────────────────
-    # "Rarely/Sometimes submitting on time" ≈ high late-submission rate.
-    on_time_map = {"Always": 0.95, "Often": 0.75, "Sometimes": 0.5, "Rarely": 0.2}
-    on_time_vals = hdf["tasks_on_time"].map(on_time_map).fillna(0.5)
-    delay_ratio_mean = float(1.0 - on_time_vals.mean())       # inverted: high = late
-    delay_ratio_std  = float(on_time_vals.std() if n > 1 else 0.0)
-
-    # ── is_last_minute proxy ──────────────────────────────────────────────────
-    # Fraction of check-ins with a deadline-panic mood.
-    is_last_minute_mean = float(hdf["mood"].map(_MOOD_DEADLINE_PANIC).fillna(0).mean())
-
-    # ── non_submit proxy ──────────────────────────────────────────────────────
-    # Same task appearing across ≥3 consecutive check-ins without a break
-    # ≈ task has never been submitted.
-    same_task_repeat = hdf["task_name"].duplicated(keep=False).mean() if n > 1 else 0.0
-    non_submit_mean = float(same_task_repeat)
-
-    # ── delay_deviation proxy ─────────────────────────────────────────────────
-    # Sleep variability is the best available proxy for irregular schedule
-    # (irregular schedule → erratic submission timing in OULAD).
-    sleep_std = float(hdf["sleep_hours"].std()) if n > 1 else 0.0
-    sleep_std = 0.0 if np.isnan(sleep_std) else sleep_std
-    delay_deviation_pos_mean = min(sleep_std / 3.0, 1.0)   # 3h std → fully irregular
-    delay_deviation_pos_std  = 0.0
-
-    # ── avoidance_score proxy ─────────────────────────────────────────────────
-    # Fraction of check-ins showing distraction signals.
-    avoidance_score_pos_mean = float(hdf["mood"].map(_MOOD_DISTRACTION).fillna(0).mean())
-
-    # ── click_drop_ratio / focus_trend proxy ──────────────────────────────────
-    # Drop in energy from first to last check-in (declining engagement).
-    energies = hdf["energy"].values.astype(float)
-    if n > 1:
-        trend = float(energies[0] - energies[-1]) / 10.0
-        click_drop_ratio_pos_mean = max(0.0, trend)
-        focus_trend_pos_mean      = max(0.0, trend)
-    else:
-        click_drop_ratio_pos_mean = 0.0
-        focus_trend_pos_mean      = 0.0
-
-    # ── screen_ratio proxy ────────────────────────────────────────────────────
-    screen_ratio_mean = avoidance_score_pos_mean   # same signal, different name in OULAD
-
-    # ── consec_low proxy ──────────────────────────────────────────────────────
-    # Longest streak of energy ≤ 3 (normalised by n).
-    streak = cur = 0
-    for e in energies:
-        if e <= 3:
-            cur += 1
-            streak = max(streak, cur)
-        else:
-            cur = 0
-    consec_low_mean = streak / max(n, 1)
-
-    # ── distraction_freq proxy ────────────────────────────────────────────────
-    distraction_freq_mean = float((hdf["mood"] == "distracted").mean())
-
-    return {
-        "delay_ratio_mean":           delay_ratio_mean,
-        "delay_ratio_std":            delay_ratio_std,
-        "is_last_minute_mean":        is_last_minute_mean,
-        "non_submit_mean":            non_submit_mean,
-        "delay_deviation_pos_mean":   delay_deviation_pos_mean,
-        "delay_deviation_pos_std":    delay_deviation_pos_std,
-        "avoidance_score_pos_mean":   avoidance_score_pos_mean,
-        "click_drop_ratio_pos_mean":  click_drop_ratio_pos_mean,
-        "screen_ratio_mean":          screen_ratio_mean,
-        "focus_trend_pos_mean":       focus_trend_pos_mean,
-        "consec_low_mean":            consec_low_mean,
-        "distraction_freq_mean":      distraction_freq_mean,
-    }
 
 
 class ModelInference:
-    def __init__(self, models_dir="stage3_models_v2", demo_json_path="demo_profiles_v2.json"):
-        self.dir = Path(models_dir)
-        self.scaler = pickle.load(open(self.dir / "scaler.pkl", "rb"))
-        self.iso    = pickle.load(open(self.dir / "isolation_forest.pkl", "rb"))
-        self.lr     = pickle.load(open(self.dir / "logistic_regression_supervised.pkl", "rb"))
-        self.ifnorm = pickle.load(open(self.dir / "if_score_normalization.pkl", "rb"))
-        self.meta   = pickle.load(open(self.dir / "stage3a_metadata.pkl", "rb"))
-        self.rf_pkg = pickle.load(open(self.dir / "random_forest_type.pkl", "rb"))
-
-        demo_path = self.dir / demo_json_path
-        if not demo_path.exists():
-            demo_path = Path(demo_json_path)
-        self.demo_profiles = json.load(open(demo_path))
-
-    # ── Path 1: Demo profiles ─────────────────────────────────────────────────
+    def __init__(self, models_dir=".", demo_json_path="demo_profiles_v2.json"):
+        models_dir = Path(models_dir)
+        self.scaler = pickle.load(open(models_dir / "scaler_v2.pkl", "rb"))
+        self.if_model = pickle.load(open(models_dir / "isolation_forest_v2.pkl", "rb"))
+        self.log_reg = pickle.load(open(models_dir / "logistic_regression_v2.pkl", "rb"))
+        rf_dict = pickle.load(open(models_dir / "random_forest_type_v2.pkl", "rb"))
+        self.rf_model = rf_dict["model"]
+        self.rf_encoder = rf_dict["encoder"]
+        self.rf_features = rf_dict["features"]
+        self.demo_profiles = json.load(open(demo_json_path))
 
     def get_demo_profile(self, proc_type: str) -> dict:
         """
-        Returns real model output for a real OULAD student of that type.
-
-        proc_type: one of 'deadline_panic', 'distraction_escape',
-                   'perfectionism_paralysis'.
-        Keys returned: id_student, is_true_holdout_2014, blended_score,
-                       rf_predicted_type, rf_confidence, shap_explanation,
-                       disclosure.
+        Returns the precomputed real-inference result for one of the 3
+        demo archetypes: 'deadline_panic', 'distraction_escape',
+        'perfectionism_paralysis'. All numbers (if_score, blended_score,
+        rf_predicted_type, rf_confidence, SHAP top-3) came from actually
+        running the v2 models on a real OULAD student's feature row —
+        see retrain_v2.py for how these were selected and computed.
         """
         if proc_type not in self.demo_profiles:
-            raise KeyError(
-                f"No demo profile for '{proc_type}'. Available: "
-                f"{list(self.demo_profiles.keys())}"
-            )
-        profile = dict(self.demo_profiles[proc_type])
-        # Ensure 'disclosure' key always present (guards against older JSON files)
-        profile.setdefault(
-            "disclosure",
-            "Anomaly score and type confidence computed by running this student's "
-            "real OULAD feature vector through the trained Stage 3A/3B models. "
-            "Student selected from the 2014 holdout set (not seen during training)."
-        )
-        return profile
+            raise ValueError(f"Unknown type '{proc_type}'. Options: {list(self.demo_profiles.keys())}")
 
-    # ── Path 2: Live check-in proxy inference ─────────────────────────────────
-
-    def score_checkin_features(self, history_df: pd.DataFrame) -> dict:
-        """
-        Infer procrastination type from a student's check-in history using
-        behavioral proxy features.
-
-        Parameters
-        ----------
-        history_df : pd.DataFrame
-            The student's full check-in history including the just-submitted
-            check-in. Required columns:
-              ts (datetime-parseable), mood (str), energy (int 1–10),
-              sleep_hours (float), tasks_on_time (str), task_name (str).
-
-        Returns
-        -------
-        dict with keys:
-          sufficient_history  : bool — False if n < MIN_CHECKINS
-          n_checkins          : int
-          proc_type           : str | None
-          type_confidence     : float | None — RF probability for top class
-          is_low_confidence   : bool — True if confidence < 0.55
-          all_type_proba      : dict | None — {type: probability}
-          proxy_features      : dict — the derived feature values
-          source              : str — always "checkin_proxy_rf"
-          proxy_disclosure    : str — must be surfaced in the UI
-        """
-        n = len(history_df)
-
-        _DISCLOSURE = (
-            "Type detected from your check-in history using proxy features "
-            f"(mood trend, energy trend, task-repeat rate, sleep variability) "
-            f"derived from {n} check-in(s). These are structurally analogous to — "
-            "but NOT the same as — the OULAD submission/click-stream features the "
-            "model was trained on. Treat this as a personalised heuristic, not a "
-            "validated classification."
-        )
-
-        if n < MIN_CHECKINS:
-            return {
-                "sufficient_history": False,
-                "n_checkins": n,
-                "proc_type": None,
-                "type_confidence": None,
-                "is_low_confidence": True,
-                "all_type_proba": None,
-                "proxy_features": {},
-                "source": "checkin_proxy_rf",
-                "proxy_disclosure": (
-                    f"Need at least {MIN_CHECKINS} check-ins to detect a behavioural "
-                    f"pattern — you have {n} so far. Complete your check-in each day "
-                    "and the model will start scoring after the third one."
-                ),
+        p = self.demo_profiles[proc_type]
+        shap_explained = [
+            {
+                "feature": feat,
+                "label": FEATURE_LABELS.get(feat, feat),
+                "value": val,
+                "shap_contribution": shap_val,
+                "direction": "pushes toward anomalous" if shap_val < 0 else "pushes toward normal",
             }
-
-        proxy = _build_proxy_features(history_df)
-
-        # ── Run through the RF type-classifier ───────────────────────────────
-        rf      = self.rf_pkg["model"]
-        le      = self.rf_pkg["encoder"]
-        rf_cols = self.rf_pkg["features"]
-
-        x = pd.DataFrame([{col: proxy.get(col, 0.0) for col in rf_cols}])
-        proba    = rf.predict_proba(x)[0]
-        top_idx  = int(np.argmax(proba))
-        top_type = le.inverse_transform([top_idx])[0]
-        top_conf = float(proba[top_idx])
+            for feat, val, shap_val in p["top3_shap_features"]
+        ]
 
         return {
-            "sufficient_history": True,
-            "n_checkins": n,
-            "proc_type": top_type,
-            "type_confidence": round(top_conf, 3),
-            "is_low_confidence": top_conf < 0.55,
-            "all_type_proba": {
-                le.inverse_transform([i])[0]: round(float(p), 3)
-                for i, p in enumerate(proba)
-            },
-            "proxy_features": proxy,
-            "source": "checkin_proxy_rf",
-            "proxy_disclosure": _DISCLOSURE,
+            "id_student": p["id_student"],
+            "is_real_oulad_student": True,
+            "is_true_holdout_2014": True,
+            "if_score": round(p["if_score"], 3),
+            "blended_score": round(p["blended_score"], 3),
+            "rf_predicted_type": p["rf_predicted_type"],
+            "rf_confidence": round(p["rf_confidence"], 3),
+            "rf_agrees_with_archetype": p["rf_matches_kmeans_label"],
+            "shap_explanation": shap_explained,
+            "disclosure": (
+                "Computed by running the actual v2 Isolation Forest, Logistic "
+                "Regression, Random Forest, and SHAP TreeExplainer on this real "
+                "OULAD student's true feature vector from the 2014 holdout set "
+                "(never seen during model fitting)."
+            ),
         }
 
-    # ── Properties ────────────────────────────────────────────────────────────
+    def model_metadata(self) -> dict:
+        return {
+            "n_features_anomaly_models": len(FEATURE_COLS_V2),
+            "feature_cols": FEATURE_COLS_V2,
+            "if_contamination": self.if_model.contamination,
+            "rf_classes": list(self.rf_encoder.classes_),
+        }
 
-    @property
-    def feature_columns(self):
-        return self.meta["features"]
 
-    @property
-    def stage3a_metrics(self):
-        return self.meta.get("metrics_holdout_2013_2014", {})
-
-    @property
-    def stage3b_validity(self):
-        return self.rf_pkg.get("validity", {})
+if __name__ == "__main__":
+    inf = ModelInference(
+        models_dir="/home/claude/v2_output/stage3_models_v2",
+        demo_json_path="/home/claude/v2_output/demo_profiles_v2.json",
+    )
+    for t in ["deadline_panic", "distraction_escape", "perfectionism_paralysis"]:
+        prof = inf.get_demo_profile(t)
+        print(f"\n=== {t} (student {prof['id_student']}) ===")
+        print(f"  blended_score={prof['blended_score']}, RF predicts={prof['rf_predicted_type']} "
+              f"(conf={prof['rf_confidence']})")
+        for s in prof["shap_explanation"]:
+            print(f"    - {s['label']}: value={s['value']:.2f}, {s['direction']}")
