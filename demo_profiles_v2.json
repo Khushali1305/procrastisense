@@ -1,0 +1,143 @@
+{
+  "deadline_panic": {
+    "id_student": 2570396,
+    "code_module": "BBB",
+    "code_presentation": "2014J",
+    "assessment_type": "TMA",
+    "if_score": 0.2533102437844194,
+    "blended_score": 0.22867663178836678,
+    "rf_predicted_type": "deadline_panic",
+    "rf_confidence": 0.99996524282407,
+    "rf_matches_kmeans_label": true,
+    "top3_shap_features": [
+      [
+        "click_drop_ratio_pos",
+        5.0,
+        -1.1127236528017437
+      ],
+      [
+        "delay_zscore_pos",
+        1.12089653817433,
+        -0.48419313348921733
+      ],
+      [
+        "is_last_minute",
+        1.0,
+        -0.3289514781770024
+      ]
+    ],
+    "feature_vector": {
+      "delay_days_pos": 0.0,
+      "delay_ratio": 0.9473684210526315,
+      "delay_deviation_pos": 0.0,
+      "rolling_avg_delay_ratio": 1.2428571428571429,
+      "rolling_last_min_rate": 0.3333333333333333,
+      "rolling_nonsub_rate": 0.0,
+      "delay_zscore_pos": 1.12089653817433,
+      "non_submit": 0.0,
+      "is_last_minute": 1.0,
+      "click_baseline": 16.333333333333332,
+      "click_drop_ratio_pos": 5.0,
+      "click_trend_pos": 0.0,
+      "is_dropout_week": 0.0,
+      "consec_low": 0.0,
+      "day_of_week": 5.0,
+      "days_to_next_deadline": 35.0,
+      "exam_season": 0.0
+    }
+  },
+  "distraction_escape": {
+    "id_student": 631527,
+    "code_module": "DDD",
+    "code_presentation": "2014B",
+    "assessment_type": "TMA",
+    "if_score": 0.4111342778749891,
+    "blended_score": 0.8004903334973863,
+    "rf_predicted_type": "distraction_escape",
+    "rf_confidence": 0.993406829520396,
+    "rf_matches_kmeans_label": true,
+    "top3_shap_features": [
+      [
+        "delay_deviation_pos",
+        21.0,
+        -0.951535742035858
+      ],
+      [
+        "rolling_last_min_rate",
+        1.0,
+        -0.7490759818677553
+      ],
+      [
+        "rolling_nonsub_rate",
+        0.3333333333333333,
+        -0.46109881790585133
+      ]
+    ],
+    "feature_vector": {
+      "delay_days_pos": 30.0,
+      "delay_ratio": 1.5,
+      "delay_deviation_pos": 21.0,
+      "rolling_avg_delay_ratio": 1.1295238095238096,
+      "rolling_last_min_rate": 1.0,
+      "rolling_nonsub_rate": 0.3333333333333333,
+      "delay_zscore_pos": 0.13583841512265168,
+      "non_submit": 1.0,
+      "is_last_minute": NaN,
+      "click_baseline": 41.75,
+      "click_drop_ratio_pos": 1.1733333333333333,
+      "click_trend_pos": -0.0,
+      "is_dropout_week": 0.0,
+      "consec_low": 0.0,
+      "day_of_week": 4.0,
+      "days_to_next_deadline": 42.0,
+      "exam_season": 0.0
+    }
+  },
+  "perfectionism_paralysis": {
+    "id_student": 625301,
+    "code_module": "BBB",
+    "code_presentation": "2014B",
+    "assessment_type": "TMA",
+    "if_score": 0.18902535651065272,
+    "blended_score": 0.7480778799238981,
+    "rf_predicted_type": "perfectionism_paralysis",
+    "rf_confidence": 0.9938577063756106,
+    "rf_matches_kmeans_label": true,
+    "top3_shap_features": [
+      [
+        "rolling_last_min_rate",
+        0.0,
+        -0.5218732619211202
+      ],
+      [
+        "rolling_nonsub_rate",
+        0.6666666666666666,
+        -0.43779275537750395
+      ],
+      [
+        "delay_deviation_pos",
+        6.0,
+        -0.27948176813845027
+      ]
+    ],
+    "feature_vector": {
+      "delay_days_pos": 30.0,
+      "delay_ratio": 1.5,
+      "delay_deviation_pos": 6.0,
+      "rolling_avg_delay_ratio": 1.4761904761904763,
+      "rolling_last_min_rate": 0.0,
+      "rolling_nonsub_rate": 0.6666666666666666,
+      "delay_zscore_pos": 0.0,
+      "non_submit": 1.0,
+      "is_last_minute": NaN,
+      "click_baseline": 41.75,
+      "click_drop_ratio_pos": 1.1733333333333333,
+      "click_trend_pos": -0.0,
+      "is_dropout_week": 0.0,
+      "consec_low": 0.0,
+      "day_of_week": 5.0,
+      "days_to_next_deadline": 35.0,
+      "exam_season": 0.0
+    }
+  }
+}
