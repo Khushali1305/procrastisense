@@ -1,143 +1,143 @@
 {
   "deadline_panic": {
-    "id_student": 2570396,
-    "code_module": "BBB",
+    "id_student": 647987,
+    "code_module": "FFF",
     "code_presentation": "2014J",
     "assessment_type": "TMA",
-    "if_score": 0.2533102437844194,
-    "blended_score": 0.22867663178836678,
+    "if_score": 0.8761495494237544,
+    "blended_score": 0.6709329318732641,
     "rf_predicted_type": "deadline_panic",
-    "rf_confidence": 0.99996524282407,
+    "rf_confidence": 0.9708294337459303,
     "rf_matches_kmeans_label": true,
     "top3_shap_features": [
       [
-        "click_drop_ratio_pos",
-        5.0,
-        -1.1127236528017437
+        "click_trend_pos",
+        141.49999999999997,
+        -1.210133703319084
       ],
       [
         "delay_zscore_pos",
-        1.12089653817433,
-        -0.48419313348921733
+        5.0,
+        -0.9986771838089867
       ],
       [
-        "is_last_minute",
+        "is_dropout_week",
         1.0,
-        -0.3289514781770024
-      ]
-    ],
-    "feature_vector": {
-      "delay_days_pos": 0.0,
-      "delay_ratio": 0.9473684210526315,
-      "delay_deviation_pos": 0.0,
-      "rolling_avg_delay_ratio": 1.2428571428571429,
-      "rolling_last_min_rate": 0.3333333333333333,
-      "rolling_nonsub_rate": 0.0,
-      "delay_zscore_pos": 1.12089653817433,
-      "non_submit": 0.0,
-      "is_last_minute": 1.0,
-      "click_baseline": 16.333333333333332,
-      "click_drop_ratio_pos": 5.0,
-      "click_trend_pos": 0.0,
-      "is_dropout_week": 0.0,
-      "consec_low": 0.0,
-      "day_of_week": 5.0,
-      "days_to_next_deadline": 35.0,
-      "exam_season": 0.0
-    }
-  },
-  "distraction_escape": {
-    "id_student": 631527,
-    "code_module": "DDD",
-    "code_presentation": "2014B",
-    "assessment_type": "TMA",
-    "if_score": 0.4111342778749891,
-    "blended_score": 0.8004903334973863,
-    "rf_predicted_type": "distraction_escape",
-    "rf_confidence": 0.993406829520396,
-    "rf_matches_kmeans_label": true,
-    "top3_shap_features": [
-      [
-        "delay_deviation_pos",
-        21.0,
-        -0.951535742035858
-      ],
-      [
-        "rolling_last_min_rate",
-        1.0,
-        -0.7490759818677553
-      ],
-      [
-        "rolling_nonsub_rate",
-        0.3333333333333333,
-        -0.46109881790585133
+        -0.9762566711907503
       ]
     ],
     "feature_vector": {
       "delay_days_pos": 30.0,
       "delay_ratio": 1.5,
-      "delay_deviation_pos": 21.0,
-      "rolling_avg_delay_ratio": 1.1295238095238096,
-      "rolling_last_min_rate": 1.0,
-      "rolling_nonsub_rate": 0.3333333333333333,
-      "delay_zscore_pos": 0.13583841512265168,
+      "delay_deviation_pos": 28.0,
+      "rolling_avg_delay_ratio": 1.0436507936507937,
+      "rolling_last_min_rate": 0.6666666666666666,
+      "rolling_nonsub_rate": 0.0,
+      "delay_zscore_pos": 5.0,
       "non_submit": 1.0,
       "is_last_minute": NaN,
-      "click_baseline": 41.75,
-      "click_drop_ratio_pos": 1.1733333333333333,
-      "click_trend_pos": -0.0,
-      "is_dropout_week": 0.0,
-      "consec_low": 0.0,
-      "day_of_week": 4.0,
+      "click_baseline": 215.5,
+      "click_drop_ratio_pos": 0.004640371229698376,
+      "click_trend_pos": 141.49999999999997,
+      "is_dropout_week": 1.0,
+      "consec_low": 1.0,
+      "day_of_week": 3.0,
       "days_to_next_deadline": 42.0,
       "exam_season": 0.0
     }
   },
-  "perfectionism_paralysis": {
-    "id_student": 625301,
-    "code_module": "BBB",
-    "code_presentation": "2014B",
-    "assessment_type": "TMA",
-    "if_score": 0.18902535651065272,
-    "blended_score": 0.7480778799238981,
-    "rf_predicted_type": "perfectionism_paralysis",
-    "rf_confidence": 0.9938577063756106,
+  "distraction_escape": {
+    "id_student": 651693,
+    "code_module": "FFF",
+    "code_presentation": "2014J",
+    "assessment_type": "CMA",
+    "if_score": 0.9170022376473278,
+    "blended_score": 0.9262135729358352,
+    "rf_predicted_type": "distraction_escape",
+    "rf_confidence": 0.927106841775346,
     "rf_matches_kmeans_label": true,
     "top3_shap_features": [
       [
+        "delay_zscore_pos",
+        5.0,
+        -1.235601389904826
+      ],
+      [
+        "is_dropout_week",
+        1.0,
+        -1.0618233465016103
+      ],
+      [
         "rolling_last_min_rate",
-        0.0,
-        -0.5218732619211202
-      ],
-      [
-        "rolling_nonsub_rate",
-        0.6666666666666666,
-        -0.43779275537750395
-      ],
-      [
-        "delay_deviation_pos",
-        6.0,
-        -0.27948176813845027
+        1.0,
+        -0.6883716831871352
       ]
     ],
     "feature_vector": {
       "delay_days_pos": 30.0,
       "delay_ratio": 1.5,
-      "delay_deviation_pos": 6.0,
-      "rolling_avg_delay_ratio": 1.4761904761904763,
-      "rolling_last_min_rate": 0.0,
+      "delay_deviation_pos": 10.0,
+      "rolling_avg_delay_ratio": 1.3333333333333333,
+      "rolling_last_min_rate": 1.0,
       "rolling_nonsub_rate": 0.6666666666666666,
+      "delay_zscore_pos": 5.0,
+      "non_submit": 1.0,
+      "is_last_minute": NaN,
+      "click_baseline": 100.0,
+      "click_drop_ratio_pos": 0.03,
+      "click_trend_pos": 66.00000000000001,
+      "is_dropout_week": 1.0,
+      "consec_low": 2.0,
+      "day_of_week": 3.0,
+      "days_to_next_deadline": 0.0,
+      "exam_season": 1.0
+    }
+  },
+  "perfectionism_paralysis": {
+    "id_student": 690471,
+    "code_module": "GGG",
+    "code_presentation": "2014J",
+    "assessment_type": "CMA",
+    "if_score": 0.30139890457103635,
+    "blended_score": 0.7693544786097012,
+    "rf_predicted_type": "perfectionism_paralysis",
+    "rf_confidence": 0.9553233913258755,
+    "rf_matches_kmeans_label": true,
+    "top3_shap_features": [
+      [
+        "exam_season",
+        1.0,
+        -0.5894501389321772
+      ],
+      [
+        "rolling_nonsub_rate",
+        0.3333333333333333,
+        -0.5476505166095496
+      ],
+      [
+        "rolling_last_min_rate",
+        0.0,
+        -0.3801841089915494
+      ]
+    ],
+    "feature_vector": {
+      "delay_days_pos": 30.0,
+      "delay_ratio": 1.5,
+      "delay_deviation_pos": 7.333333333333332,
+      "rolling_avg_delay_ratio": 1.3770491803278688,
+      "rolling_last_min_rate": 0.0,
+      "rolling_nonsub_rate": 0.3333333333333333,
       "delay_zscore_pos": 0.0,
       "non_submit": 1.0,
       "is_last_minute": NaN,
-      "click_baseline": 41.75,
-      "click_drop_ratio_pos": 1.1733333333333333,
+      "click_baseline": 40.75,
+      "click_drop_ratio_pos": 1.2,
       "click_trend_pos": -0.0,
       "is_dropout_week": 0.0,
       "consec_low": 0.0,
       "day_of_week": 5.0,
-      "days_to_next_deadline": 35.0,
-      "exam_season": 0.0
+      "days_to_next_deadline": 0.0,
+      "exam_season": 1.0
     }
   }
 }
