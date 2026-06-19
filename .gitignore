@@ -1,6 +1,5 @@
 # Data — OULAD CSVs are large and publicly downloadable, don't commit them
 data/
-*.csv
 
 # Large generated artifacts
 outputs/*.parquet
