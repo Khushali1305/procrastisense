@@ -22,11 +22,41 @@ def load_cohort_matcher():
 inference = load_inference()
 cohort = load_cohort_matcher()
 
-# ── Groq client ───────────────────────────────────────────────────────────────
+# ── Groq client (3-key rotation) ───────────────────────────────────────────────
+def _collect_groq_keys():
+    """Gather any configured Groq keys, trying several common naming schemes
+    so this works whether secrets.toml has GROQ_API_KEY_1/_2/_3, a single
+    GROQ_API_KEY, or a list under GROQ_API_KEYS."""
+    keys = []
+    # Scheme 1: GROQ_API_KEY_1, GROQ_API_KEY_2, GROQ_API_KEY_3
+    for i in (1, 2, 3):
+        k = st.secrets.get(f"GROQ_API_KEY_{i}", os.environ.get(f"GROQ_API_KEY_{i}", ""))
+        if k:
+            keys.append(k)
+    # Scheme 2: a single GROQ_API_KEY
+    single = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+    if single and single not in keys:
+        keys.append(single)
+    # Scheme 3: a list/array secret GROQ_API_KEYS = ["...", "...", "..."]
+    arr = st.secrets.get("GROQ_API_KEYS", None)
+    if arr:
+        for k in arr:
+            if k and k not in keys:
+                keys.append(k)
+    return keys
+
 @st.cache_resource
+def get_groq_clients():
+    keys = _collect_groq_keys()
+    if not keys:
+        return []
+    return [Groq(api_key=k) for k in keys]
+
 def get_groq_client():
-    api_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
-    return Groq(api_key=api_key) if api_key else None
+    """Returns the first available client (kept for backward compatibility
+    with any code below that still calls this directly)."""
+    clients = get_groq_clients()
+    return clients[0] if clients else None
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -83,9 +113,14 @@ TYPE_GUIDANCE = {
 }
 
 def generate_nudge_live(proc_type, mood, task_name, cohort_narrative=""):
-    client = get_groq_client()
-    if client is None:
-        st.error("DEBUG: get_groq_client() returned None — GROQ_API_KEY secret is missing or empty.")
+    clients = get_groq_clients()
+    if not clients:
+        st.error(
+            "DEBUG: No Groq keys found in st.secrets. Checked for "
+            "GROQ_API_KEY_1/_2/_3, GROQ_API_KEY, and GROQ_API_KEYS (list). "
+            "Open your Streamlit Cloud app -> Settings -> Secrets and confirm "
+            "the key names match one of these exactly (case-sensitive)."
+        )
         return {
             "nudge": f"Hey, it looks like {task_name} has been waiting a while. That's okay — let's take one tiny step together.",
             "micro_action": "Open the document and write just one sentence. Nothing more."
@@ -97,20 +132,29 @@ def generate_nudge_live(proc_type, mood, task_name, cohort_narrative=""):
 - Task they are avoiding: {task_name}
 - Real cohort context: {cohort_narrative}
 Generate the nudge + micro_action JSON now."""
-    try:
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL, max_tokens=250, temperature=0.7,
-            response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": SYSTEM_PROMPT},
-                      {"role": "user", "content": prompt}]
-        )
-        return json.loads(resp.choices[0].message.content)
-    except Exception as e:
-        st.error(f"DEBUG: Groq call failed with: {type(e).__name__}: {e}")
-        return {
-            "nudge": "We see you are carrying a lot right now. One small step is all it takes.",
-            "micro_action": "Open the task document and write just one sentence."
-        }
+
+    last_error = None
+    for i, client in enumerate(clients):
+        try:
+            resp = client.chat.completions.create(
+                model=GROQ_MODEL, max_tokens=250, temperature=0.7,
+                response_format={"type": "json_object"},
+                messages=[{"role": "system", "content": SYSTEM_PROMPT},
+                          {"role": "user", "content": prompt}]
+            )
+            return json.loads(resp.choices[0].message.content)
+        except Exception as e:
+            last_error = e
+            # Try the next key (handles per-key rate limits) instead of
+            # failing immediately on the first one.
+            continue
+
+    st.error(f"DEBUG: All {len(clients)} Groq key(s) failed. Last error: "
+             f"{type(last_error).__name__}: {last_error}")
+    return {
+        "nudge": "We see you are carrying a lot right now. One small step is all it takes.",
+        "micro_action": "Open the task document and write just one sentence."
+    }
 
 # ── Demo profile flavor text (illustrative only — all NUMBERS below are real) ─
 DEMO_FLAVOR = {
