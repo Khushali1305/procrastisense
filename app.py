@@ -85,6 +85,7 @@ TYPE_GUIDANCE = {
 def generate_nudge_live(proc_type, mood, task_name, cohort_narrative=""):
     client = get_groq_client()
     if client is None:
+        st.error("DEBUG: get_groq_client() returned None — GROQ_API_KEY secret is missing or empty.")
         return {
             "nudge": f"Hey, it looks like {task_name} has been waiting a while. That's okay — let's take one tiny step together.",
             "micro_action": "Open the document and write just one sentence. Nothing more."
@@ -104,7 +105,8 @@ Generate the nudge + micro_action JSON now."""
                       {"role": "user", "content": prompt}]
         )
         return json.loads(resp.choices[0].message.content)
-    except Exception:
+    except Exception as e:
+        st.error(f"DEBUG: Groq call failed with: {type(e).__name__}: {e}")
         return {
             "nudge": "We see you are carrying a lot right now. One small step is all it takes.",
             "micro_action": "Open the task document and write just one sentence."
